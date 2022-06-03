@@ -1,0 +1,61 @@
+ros:
+  pointCloudTopic: "/livox/lidar"               # Point cloud data
+  imuTopic: "/livox/imu"                     # IMU data
+  odomTopic: "odometry"
+  lidarFrame: "livox"
+  baselinkFrame: "livox"
+  odometryFrame: "odom"
+  mapFrame: "map"
+
+calibration:
+  # Extrinsics (RSLIDAR -> LIVOX)
+  livoxExtrinsicTrans: [0.0, 0.0, 0.0]
+  livoxExtrinsicRot: [1, 0, 0,
+                      0, 1, 0,
+                      0, 0, 1]
+  imuExtrinsicTrans: [0.0, 0.0, 0.0]
+  imuExtrinsicRot: [1, 0, 0,
+                    0, 1, 0,
+                    0, 0, 1]
+
+lidar0:
+  N_SCAN: 6
+  Horizon_SCAN: 10000
+  lidarMinRange: 1.0
+  lidarMaxRange: 200.0
+
+imu:
+  # IMU Settings
+  imuAccNoise: 0.1
+  imuGyrNoise: 0.1
+  imuAccBiasN: 0.0001
+  imuGyrBiasN: 0.0001
+  imuGravity: 9.80511
+  imuRPYWeight: 0.00
+  # robot motion constraint (in case you are using a 2D robot)
+  z_tollerance: 1000                            # meters
+  rotation_tollerance: 1000                     # radians
+
+ivox:
+  ivox_grid_resolution: 0.5        # default=0.2
+  ivox_nearby_type: 26             # 6, 18, 26
+  ivox_capacity: 1000000
+  esti_plane_threshold: 0.1        # default=0.1
+  cube_side_length: 1000
+  filter_size_surf: 0.5
+  filter_size_map: 0.5             # 暂时未用到，代码中为0， 即倾向于将降采样后的scan中的所有点加入map
+  point_filter_num: 3
+
+# ikd tree临时使用
+# ivox:
+#   ivox_grid_resolution: 0.5        # default=0.2
+#   ivox_nearby_type: 26             # 6, 18, 26
+#   esti_plane_threshold: 0.1        # default=0.1
+#   cube_side_length: 1000
+#   filter_size_surf: 0.5
+#   filter_size_map: 0.5             # 暂时未用到，代码中为0， 即倾向于将降采样后的scan中的所有点加入map
+#   point_filter_num: 3
+
+mapping:
+  useImuHeadingInitialization: false
+  optimizationStep: 1.0
