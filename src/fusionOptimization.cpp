@@ -192,6 +192,7 @@ public:
 
         accBias.setZero();
         gyrBias.setZero();
+        
     }
 
     void imuHandler(const sensor_msgs::Imu::ConstPtr& imuMsg)

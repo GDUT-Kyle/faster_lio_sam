@@ -83,7 +83,7 @@ using PointVector = std::vector<PointType, Eigen::aligned_allocator<PointType>>;
 
 constexpr int NUM_MATCH_POINTS = 5;      // required matched points in current
 constexpr int MIN_NUM_MATCH_POINTS = 3;  // minimum matched points in current
-constexpr float LIDAR_STD = 0.1;
+constexpr float LIDAR_STD = 0.001;
 
 inline double rad2deg(double radians) { return radians * 180.0 / M_PI; }
 
