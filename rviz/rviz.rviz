@@ -8,7 +8,7 @@ Panels:
         - /Status1
         - /Odometry2/Shape1
       Splitter Ratio: 0.5
-    Tree Height: 728
+    Tree Height: 363
   - Class: rviz/Selection
     Name: Selection
   - Class: rviz/Tool Properties
@@ -293,25 +293,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 91.56575775146484
+      Distance: 129.68357849121094
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 20.5267333984375
-        Y: 1.7205314636230469
-        Z: 0.017061004415154457
+        X: 0
+        Y: 0
+        Z: 0
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.419797420501709
+      Pitch: 0.7853981852531433
       Target Frame: livox
       Value: Orbit (rviz)
-      Yaw: 2.625401258468628
+      Yaw: 0.7853981852531433
     Saved: ~
 Window Geometry:
   Displays:

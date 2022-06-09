@@ -19,7 +19,7 @@ calibration:
                     0, 0, 1]
 
 lidar0:
-  N_SCAN: 6
+  N_SCAN: 1
   Horizon_SCAN: 10000
   lidarMinRange: 1.0
   lidarMaxRange: 200.0
@@ -46,16 +46,6 @@ ivox:
   filter_size_map: 0.5             # 暂时未用到，代码中为0， 即倾向于将降采样后的scan中的所有点加入map
   point_filter_num: 3
 
-# ikd tree临时使用
-# ivox:
-#   ivox_grid_resolution: 0.5        # default=0.2
-#   ivox_nearby_type: 26             # 6, 18, 26
-#   esti_plane_threshold: 0.1        # default=0.1
-#   cube_side_length: 1000
-#   filter_size_surf: 0.5
-#   filter_size_map: 0.5             # 暂时未用到，代码中为0， 即倾向于将降采样后的scan中的所有点加入map
-#   point_filter_num: 3
-
 mapping:
-  useImuHeadingInitialization: false
+  useImuHeadingInitialization: true
   optimizationStep: 1.0
