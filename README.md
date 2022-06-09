@@ -12,6 +12,7 @@
 4. pcl: `sudo apt-get install libpcl-dev`
 5. OpenCV
 6. GTSAM
+6. livox_ros_driver
 
 ## BUILD
 
@@ -44,7 +45,11 @@ catkin build faster_lio_sam
 
 ### 1. Prepare your `rosbag`
 
+Using Livox's custom message types
+
 ![](./pic/info_rosbag.png)
+
+**IMU messages must contain attitude information !!!**
 
 ![image-20220609210621982](pic/imu_data.png)
 
