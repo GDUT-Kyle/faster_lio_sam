@@ -367,6 +367,16 @@ void imuAccel2rosAccel(sensor_msgs::Imu *thisImuMsg, T *acc_x, T *acc_y, T *acc_
 template<typename T>
 void imuRPY2rosRPY(sensor_msgs::Imu *thisImuMsg, T *rosRoll, T *rosPitch, T *rosYaw)
 {
+    if(thisImuMsg->orientation.x==0 &&
+        thisImuMsg->orientation.y==0 &&
+        thisImuMsg->orientation.z==0 &&
+        thisImuMsg->orientation.w==0 )
+    {
+        *rosRoll = 0.0;
+        *rosPitch = 0.0;
+        *rosYaw = 0.0;
+        return;
+    }
     double imuRoll, imuPitch, imuYaw;
     tf::Quaternion orientation;
     tf::quaternionMsgToTF(thisImuMsg->orientation, orientation);

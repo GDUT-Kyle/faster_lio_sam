@@ -1,8 +1,46 @@
 # faster_lio_sam
 
+<img src="./pic/gdut.png" div align=center style="zoom: 50%;" />
+
+<img src="./pic/bag0.png" style="zoom: 67%;" />
+
 ## INTRODUCTION
 
+A real-time Livox LiDAR+IMU odometry package. Our main work is to redesign an efficient and accurate SLAM scheme based on the excellent ideas of **[FAST_LIO](https://github.com/hku-mars/FAST_LIO)/[faster-lio](https://github.com/gaoxiang12/faster-lio)/[LIO-SAM](https://github.com/TixiaoShan/LIO-SAM)**. The specific steps of the system are as follows:
 
+1. `ImageProjection.cpp`: Undistort scan using IMU measurements and high frequency odometry information.
+2. `fusionOptimization.cpp`: Fusion of LiDAR and IMU based on iterative error state Kalman filter (IESKF) and iVox to estimate global state (PVQ).
+3. `imuPreintegration.cpp`: Based on ISAM2, the IMU pre-integration factor and the odometry factor are used to jointly estimate the bias of the IMU.
+4. `Pose Optimazation`: This function is not included in this project, we recommend users to refer to **[livox_backend](https://github.com/GDUT-Kyle/livox_backend)**. The mentioned project uses a distance-based loop closure detector for global pose graph optimization.
+
+<p align='center'>
+    <img src="./pic/handheld1.png" alt="drawing" width="400"/>
+    <img src="./pic/handheld.jpg" alt="drawing" width="300"/>
+</p>
+
+<img src="./pic/frame.png" style="zoom:50%;" />
+
+<table rules="none" align="center">
+	<tr>
+		<td>
+			<center>
+				<img src="./pic/fl1.png" width="110%" />
+				<br/>
+				<font color="AAAAAA">faster-lio</font>
+			</center>
+		</td>
+		<td>
+			<center>
+				<img src="./pic/myfl1.png" width="90%" />
+				<br/>
+				<font color="AAAAAA">[ours] faster_lio_sam</font>
+			</center>
+		</td>
+	</tr>
+</table>
+
+
+<center class = "half"> </center>
 
 ## DEPEND
 
@@ -17,7 +55,7 @@
 ## BUILD
 
 - Download the package from git, and upzip the library in the thirdparty:
-```
+```bash
 cd ~/ros/catkin_ws/src
 git clone https://github.com/GDUT-Kyle/faster_lio_sam
 cd faster_lio_sam/thirdparty
@@ -26,7 +64,7 @@ tar -xvf tbb2018_20170726oss_lin.tgz
 
 - Upgrade the g++ compiler to 9.0 or higher by:
 
-```
+```bash
 sudo add-apt-repository ppa:ubuntu-toolchain-r/test
 sudo apt update
 sudo apt install gcc-9
@@ -37,7 +75,7 @@ sudo ln -s gcc-9 gcc
 sudo ln -s g++-9 g++
 ```
 - Compile with catkin build
-```
+```bash
 catkin build faster_lio_sam
 ```
 
@@ -49,7 +87,7 @@ Using Livox's custom message types
 
 ![](./pic/info_rosbag.png)
 
-**IMU messages must contain attitude information !!!**
+**!!! IMU messages must contain attitude information !!!**
 
 ![image-20220609210621982](pic/imu_data.png)
 
@@ -61,7 +99,7 @@ Using Livox's custom message types
 
 Livox Mid-70
 
-```
+```yaml
 lidar0:
   N_SCAN: 1
   Horizon_SCAN: 10000
@@ -71,14 +109,14 @@ lidar0:
 
 ### 4. Launch
 
-```
+```bash
 roslaunch faster_lio_sam run.launch
 rosbag play [YOUR_ROSBAG] --clock
 ```
 
 ## RESULT
 
-![](pic/bag1.png)
+<img src="pic/bag1.png" style="zoom: 67%;" />
 
 ![](./pic/bag2.png)
 
