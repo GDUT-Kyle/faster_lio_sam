@@ -40,7 +40,11 @@ A real-time Livox LiDAR+IMU odometry package. Our main work is to redesign an ef
 </table>
 
 
-<center class = "half"> </center>
+## Demo video
+
+[PARKING LOT](https://www.bilibili.com/video/BV19F411F7mR?spm_id_from=333.999.0.0&vd_source=5cb4af9a8739369e1b405a4fd42e8b80)
+
+[OPEN SPACE](https://www.bilibili.com/video/BV1cF411V7XX?spm_id_from=333.999.0.0&vd_source=5cb4af9a8739369e1b405a4fd42e8b80)
 
 ## DEPEND
 
