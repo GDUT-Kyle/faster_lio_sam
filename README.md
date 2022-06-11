@@ -17,7 +17,6 @@ A real-time Livox LiDAR+IMU odometry package. Our main work is to redesign an ef
     <img src="./pic/handheld1.png" alt="drawing" width="400"/>
     <img src="./pic/handheld.jpg" alt="drawing" width="300"/>
 </p>
-
 <img src="./pic/frame.png" style="zoom:50%;" />
 
 <table rules="none" align="center">
