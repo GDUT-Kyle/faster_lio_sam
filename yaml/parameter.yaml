@@ -1,6 +1,6 @@
 ros:
   pointCloudTopic: "/livox/lidar"               # Point cloud data
-  imuTopic: "/imu/data"                     # IMU data
+  imuTopic: "/livox/imu"                     # IMU data
   odomTopic: "odometry"
   lidarFrame: "livox"
   baselinkFrame: "livox"
