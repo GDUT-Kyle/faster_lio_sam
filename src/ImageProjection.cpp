@@ -170,7 +170,7 @@ public:
     {
         // cache point cloud
         cloudQueue.push_back(*laserCloudMsg);
-        if(cloudQueue.size()<=2)
+        if(cloudQueue.size()<=1)
             return false;
         
         // convert cloud
