@@ -1,6 +1,6 @@
 ros:
   pointCloudTopic: "/livox/lidar"               # Point cloud data
-  imuTopic: "/livox/imu"                     # IMU data
+  imuTopic: "/wit/imu"                     # IMU data
   odomTopic: "odometry"
   lidarFrame: "livox"
   baselinkFrame: "livox"
@@ -43,9 +43,9 @@ ivox:
   esti_plane_threshold: 0.1        # default=0.1
   cube_side_length: 1000
   filter_size_surf: 0.5
-  filter_size_map: 0.5             # 暂时未用到，代码中为0， 即倾向于将降采样后的scan中的所有点加入map
+  filter_size_map: 0.5            # 暂时未用到，代码中为0， 即倾向于将降采样后的scan中的所有点加入map
   point_filter_num: 3
 
 mapping:
-  useImuHeadingInitialization: true
+  useImuHeadingInitialization: false
   optimizationStep: 1.0

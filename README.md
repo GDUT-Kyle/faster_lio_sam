@@ -38,7 +38,6 @@ A real-time Livox LiDAR+IMU odometry package. Our main work is to redesign an ef
 	</tr>
 </table>
 
-
 ## Demo video
 
 [PARKING LOT](https://www.bilibili.com/video/BV19F411F7mR?spm_id_from=333.999.0.0&vd_source=5cb4af9a8739369e1b405a4fd42e8b80)
@@ -53,11 +52,12 @@ A real-time Livox LiDAR+IMU odometry package. Our main work is to redesign an ef
 4. pcl: `sudo apt-get install libpcl-dev`
 5. OpenCV
 6. GTSAM
-6. livox_ros_driver
+7. livox_ros_driver
 
 ## BUILD
 
 - Download the package from git, and upzip the library in the thirdparty:
+
 ```bash
 cd ~/ros/catkin_ws/src
 git clone https://github.com/GDUT-Kyle/faster_lio_sam
@@ -77,7 +77,9 @@ sudo rm gcc g++
 sudo ln -s gcc-9 gcc
 sudo ln -s g++-9 g++
 ```
+
 - Compile with catkin build
+
 ```bash
 catkin build faster_lio_sam
 ```
@@ -90,7 +92,9 @@ Using Livox's custom message types
 
 ![](./pic/info_rosbag.png)
 
-**!!! IMU messages must contain attitude information !!!**
+**!!! [IMU messages must contain attitude information]() !!!**
+
+**!!! [IMU消息必须包含姿态信息]()) !!!**
 
 ![image-20220609210621982](pic/imu_data.png)
 
