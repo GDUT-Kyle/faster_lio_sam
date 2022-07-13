@@ -94,7 +94,7 @@ Using Livox's custom message types
 
 **!!! [IMU messages must contain attitude information]() !!!**
 
-**!!! [IMU消息必须包含姿态信息]()) !!!**
+**!!! [IMU消息必须包含姿态信息]() !!!**
 
 ![image-20220609210621982](pic/imu_data.png)
 

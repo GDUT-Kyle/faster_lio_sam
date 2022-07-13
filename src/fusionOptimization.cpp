@@ -192,6 +192,7 @@ public:
 
         accBias.setZero();
         gyrBias.setZero();
+        updateVec_.setZero();
         
     }
 
@@ -561,7 +562,6 @@ public:
         // R_k       = LIDAR_STD*Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>::Identity(laserCloudSelNum, laserCloudSelNum);
         // R_k_inv   = (1/LIDAR_STD)*Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>::Identity(laserCloudSelNum, laserCloudSelNum);
         K_k       = Eigen::Matrix<float, 18, Eigen::Dynamic>::Zero(18, laserCloudSelNum);
-        updateVec_.setZero();
 
         PointType pointOri, coeff;
 
@@ -641,9 +641,12 @@ public:
         transformTobeMapped[POS_+0] += updateVec_(POS_+0, 0);
         transformTobeMapped[POS_+1] += updateVec_(POS_+1, 0);
         transformTobeMapped[POS_+2] += updateVec_(POS_+2, 0);
-        transformTobeMapped[VEL_+0] += updateVec_(VEL_+0, 0);
-        transformTobeMapped[VEL_+1] += updateVec_(VEL_+1, 0);
-        transformTobeMapped[VEL_+2] += updateVec_(VEL_+2, 0);
+        if(!useUniformMotionForUpdateVel)
+        {
+            transformTobeMapped[VEL_+0] += updateVec_(VEL_+0, 0);
+            transformTobeMapped[VEL_+1] += updateVec_(VEL_+1, 0);
+            transformTobeMapped[VEL_+2] += updateVec_(VEL_+2, 0);
+        }
 
         bool coverage = true;
         for(int i=0; i<3; i++)
@@ -675,12 +678,13 @@ public:
     {
         for(int i=0; i<3; i++)
         {
-            // transformTobeMapped[VEL_+i] = (transformTobeMapped[POS_+i]-transformTobeMappedLast[POS_+i])/dt;
-            // filterState.vn_(i) = transformTobeMapped[VEL_+i];
+            if(useUniformMotionForUpdateVel)
+                transformTobeMapped[VEL_+i] = (transformTobeMapped[POS_+i]-transformTobeMappedLast[POS_+i])/dt;
+            filterState.vn_(i) = transformTobeMapped[VEL_+i];
 
             // 看作匀加速运动
             // transformTobeMapped[VEL_+i] = 2.0*(transformTobeMapped[POS_+i]-transformTobeMappedLast[POS_+i])/dt-transformTobeMappedLast[VEL_+i];
-            filterState.vn_(i) = transformTobeMapped[VEL_+i];
+            // filterState.vn_(i) = transformTobeMapped[VEL_+i];
         }
         // filterState.vn_ = Eigen::Vector3f(transformTobeMapped[VEL_+0], transformTobeMapped[VEL_+1], transformTobeMapped[VEL_+2]);
         // 将transformTobeMapped转成矩阵形式

@@ -159,6 +159,7 @@ protected:
 
     bool useImuHeadingInitialization;
     float optimizationStep;
+    bool useUniformMotionForUpdateVel;
     
 public:
     parameter()
@@ -210,6 +211,7 @@ public:
 
         nh.param<bool>("mapping/useImuHeadingInitialization", useImuHeadingInitialization, true);
         nh.param<float>("mapping/optimizationStep", optimizationStep, 0.1);
+        nh.param<bool>("mapping/useUniformMotionForUpdateVel", useUniformMotionForUpdateVel, true);
 
     }
     virtual ~parameter()
