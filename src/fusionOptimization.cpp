@@ -41,6 +41,7 @@ private:
     // 线程锁
     std::mutex imuLock;
     std::mutex biasLock;
+    std::mutex odomLock;
 
     // ros
     ros::Publisher pubLaserCloudSurround;
@@ -48,8 +49,10 @@ private:
     ros::Publisher pubPath;
     ros::Publisher pubCloudRegisteredRaw;
     ros::Publisher pubCloudUndisorted;
+    ros::Publisher pubWheelOdom;
     ros::Subscriber subCloud;
     ros::Subscriber subImuBias;
+    ros::Subscriber subWheelOdom;
     faster_lio_sam::cloud_info cloudInfo;
 
     // 保存imu
@@ -116,6 +119,25 @@ private:
     Eigen::Matrix<float, 18, 18> HRH;
     Eigen::Matrix<float, 18, 18> HRH_inv;
 
+    Eigen::Matrix<float, 1, 6> matE;
+    Eigen::Matrix<float, 6, 6> matV;
+    Eigen::Matrix<float, 6, 6> matV2;
+    Eigen::Matrix<float, 6, 6> matP;
+
+    bool recWheelOdomMsg;
+    deque<nav_msgs::Odometry> wheelOdomQue;
+    nav_msgs::Odometry initWheelOdom;
+    Eigen::Vector3f initWheelOdomPos;
+    Eigen::Quaternionf initWheelOdomAtt;
+    Eigen::Vector3f lastWheelOdomPos;
+    Eigen::Quaternionf lastWheelOdomAtt;
+    Eigen::Vector3f relaWheelOdomPos;
+    Eigen::Quaternionf relaWheelOdomAtt;
+    Eigen::Vector3f preWheelOdomPos;
+    Eigen::Quaternionf preWheelOdomAtt;
+    bool wheelOdomValid;
+    Eigen::Matrix<float, 6, 6> V_t;
+
 public:
     mapOptimization()
     {
@@ -124,11 +146,14 @@ public:
         pubPath                     = nh.advertise<nav_msgs::Path>("lio_sam/mapping/path", 1);
         pubCloudRegisteredRaw = nh.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/cloud_registered_raw", 1);
         pubCloudUndisorted = nh.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/cloud_undisorted", 1);
+        pubWheelOdom = nh.advertise<nav_msgs::Odometry> ("lio_sam/mapping/wheel_odometry", 1);
 
         subCloud = nh.subscribe<faster_lio_sam::cloud_info>("lio_sam/deskew/cloud_info", 1, &mapOptimization::laserCloudInfoHandler, this, ros::TransportHints().tcpNoDelay());
         subImu   = nh.subscribe<sensor_msgs::Imu>(imuTopic, 2000, &mapOptimization::imuHandler, this, ros::TransportHints().tcpNoDelay());
         subImuBias    = nh.subscribe<std_msgs::Float64MultiArray>("lio_sam/imu/bias", 5, &mapOptimization::imuBiasHandler, this, ros::TransportHints().tcpNoDelay());
         downSizeFilterScan.setLeafSize(filter_size_surf, filter_size_surf, filter_size_surf);
+
+        subWheelOdom = nh.subscribe<nav_msgs::Odometry>(wheelOdomTopic, 5, &mapOptimization::wheelOdomHandler, this, ros::TransportHints().tcpNoDelay());
 
         aftMappedTrans.frame_id_ = odometryFrame;
         // aftMappedTrans.child_frame_id_ = lidarFrame;
@@ -193,7 +218,14 @@ public:
         accBias.setZero();
         gyrBias.setZero();
         updateVec_.setZero();
-        
+
+        matE.setZero();
+        matV.setZero();
+        matV2.setZero();
+        matP.setZero();
+
+        recWheelOdomMsg = false;
+        wheelOdomValid = false;
     }
 
     void imuHandler(const sensor_msgs::Imu::ConstPtr& imuMsg)
@@ -215,6 +247,19 @@ public:
         }
     }
 
+    void wheelOdomHandler(const nav_msgs::Odometry::ConstPtr& wheelOdomMsg)
+    {
+        std::lock_guard<std::mutex> lock1(odomLock);
+        if(!recWheelOdomMsg)
+        {
+            initWheelOdom = *wheelOdomMsg;
+            initWheelOdomPos = Eigen::Vector3f(initWheelOdom.pose.pose.position.x, initWheelOdom.pose.pose.position.y, initWheelOdom.pose.pose.position.z);
+            initWheelOdomAtt = Eigen::Quaternionf(initWheelOdom.pose.pose.orientation.w, initWheelOdom.pose.pose.orientation.x, initWheelOdom.pose.pose.orientation.y, initWheelOdom.pose.pose.orientation.z);
+            recWheelOdomMsg = true;
+        }
+        wheelOdomQue.push_back(*wheelOdomMsg);
+    }
+
     void laserCloudInfoHandler(const faster_lio_sam::cloud_infoConstPtr& msgIn)
     {
         std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
@@ -234,12 +279,15 @@ public:
                 {
                     updateInitialPose();
                     removeOldImu();
+                    removeOldOdom();
                     handleFirstScan();
                     sysStatus = OTHER_SCAN;
                     break;
                 }
                 case OTHER_SCAN:
                 {
+                    predictByOdom();
+                    // removeOldOdom();
                     predictByFilter();
                     downsampleCurrentScan();
                     updateTransformationByFilter();
@@ -328,6 +376,89 @@ public:
                 break;
         }
         imuQueue.push_front(frontImu); // Imu coverage lidar
+    }
+
+    void removeOldOdom()
+    {
+        // 类似imu对齐，将队列中旧的odom去除，但是保证队列首的odom消息时间戳早于Lidar
+        std::lock_guard<std::mutex> lock1(odomLock);
+        nav_msgs::Odometry frontOdom;
+        while(!wheelOdomQue.empty())
+        {
+            if(wheelOdomQue.front().header.stamp.toSec()<timeLaserInfoCur)
+            {
+                frontOdom = wheelOdomQue.front();
+                wheelOdomQue.pop_front();
+            }
+            else
+                break;
+        }
+        // wheelOdomQue.push_front(frontOdom);
+        // cout<<wheelOdomQue.size()<<endl;
+
+        wheelOdomValid = false;
+        nav_msgs::Odometry curOdom;
+        nav_msgs::Odometry& odom1 = frontOdom;
+        if(!wheelOdomQue.empty())
+        {
+            nav_msgs::Odometry& odom2 = wheelOdomQue.front();
+            odomLinearInterpolation(odom1, odom2, timeLaserInfoCur, curOdom);
+            wheelOdomValid = true;
+        }
+        else
+        {
+            curOdom = odom1;
+            wheelOdomValid = false;
+        }
+
+        lastWheelOdomPos = Eigen::Vector3f(curOdom.pose.pose.position.x, curOdom.pose.pose.position.y, curOdom.pose.pose.position.z);
+        lastWheelOdomAtt = Eigen::Quaternionf(curOdom.pose.pose.orientation.w, curOdom.pose.pose.orientation.x, curOdom.pose.pose.orientation.y, curOdom.pose.pose.orientation.z);
+
+        nav_msgs::Odometry curOdomMsg;
+        Eigen::Vector3f curOdomPos = Eigen::Vector3f(curOdom.pose.pose.position.x, curOdom.pose.pose.position.y, curOdom.pose.pose.position.z);
+        Eigen::Quaternionf curOdomAtt = Eigen::Quaternionf(curOdom.pose.pose.orientation.w, curOdom.pose.pose.orientation.x, curOdom.pose.pose.orientation.y, curOdom.pose.pose.orientation.z);
+        Eigen::Vector3f relaOdomPos;
+        Eigen::Quaternionf relaOdomAtt;
+        relaOdomPos = wheelImuExtrinsicRot * initWheelOdomAtt.inverse()*(curOdomPos-initWheelOdomPos);
+        relaOdomAtt = initWheelOdomAtt.inverse() * curOdomAtt;
+
+        curOdomMsg.header.stamp.fromSec(timeLaserInfoCur);
+        curOdomMsg.header.frame_id = odometryFrame;
+        curOdomMsg.pose.pose.position.x = relaOdomPos.x();
+        curOdomMsg.pose.pose.position.y = relaOdomPos.y();
+        curOdomMsg.pose.pose.position.z = relaOdomPos.z();
+        curOdomMsg.pose.pose.orientation.x = relaOdomAtt.x();
+        curOdomMsg.pose.pose.orientation.y = relaOdomAtt.y();
+        curOdomMsg.pose.pose.orientation.z = relaOdomAtt.z();
+        curOdomMsg.pose.pose.orientation.w = relaOdomAtt.w();
+
+        pubWheelOdom.publish(curOdomMsg);
+    }
+
+    void odomLinearInterpolation(const nav_msgs::Odometry& odom1, const nav_msgs::Odometry& odom2, double timestamp, nav_msgs::Odometry& res)
+    {
+        Eigen::Vector3f frontOdomPos(odom1.pose.pose.position.x, odom1.pose.pose.position.y, odom1.pose.pose.position.z);
+        Eigen::Quaternionf frontOdomAtt(odom1.pose.pose.orientation.w, odom1.pose.pose.orientation.x, odom1.pose.pose.orientation.y, odom1.pose.pose.orientation.z);
+
+        Eigen::Vector3f backOdomPos(odom2.pose.pose.position.x, odom2.pose.pose.position.y, odom2.pose.pose.position.z);
+        Eigen::Quaternionf backOdomAtt(odom2.pose.pose.orientation.w, odom2.pose.pose.orientation.x, odom2.pose.pose.orientation.y, odom2.pose.pose.orientation.z);
+
+        double frontTime = odom1.header.stamp.toSec();
+        double backTime = odom2.header.stamp.toSec();
+
+        float s = (timestamp-frontTime)/(backTime-frontTime);
+
+        Eigen::Vector3f targetOdomPos = frontOdomPos + s*(backOdomPos-frontOdomPos);
+        Eigen::Quaternionf targetOdomAtt = frontOdomAtt.slerp(s, backOdomAtt);
+
+        res.pose.pose.position.x = targetOdomPos.x();
+        res.pose.pose.position.y = targetOdomPos.y();
+        res.pose.pose.position.z = targetOdomPos.z();
+
+        res.pose.pose.orientation.x = targetOdomAtt.x();
+        res.pose.pose.orientation.y = targetOdomAtt.y();
+        res.pose.pose.orientation.z = targetOdomAtt.z();
+        res.pose.pose.orientation.w = targetOdomAtt.w();
     }
 
     void handleFirstScan()
@@ -445,6 +576,68 @@ public:
         );
     }
 
+    void predictByOdom()
+    {
+        // 从队列中找到恰好能够夹住Lidar的两个odom消息，线性插值计算该Lidar对应的odom，然后与上一帧
+        // 对应的odom计算差值，将该差值叠加到上一次的后验中，得到基于odom的测量估计
+        // 类似imu对齐，将队列中旧的odom去除，但是保证队列首的odom消息时间戳早于Lidar
+        std::lock_guard<std::mutex> lock1(odomLock);
+        nav_msgs::Odometry frontOdom;
+        while(!wheelOdomQue.empty())
+        {
+            if(wheelOdomQue.front().header.stamp.toSec()<timeLaserInfoCur)
+            {
+                frontOdom = wheelOdomQue.front();
+                wheelOdomQue.pop_front();
+            }
+            else
+                break;
+        }
+        // wheelOdomQue.push_front(frontOdom);
+        // cout<<wheelOdomQue.size()<<endl;
+
+        wheelOdomValid = false;
+        nav_msgs::Odometry curOdom;
+        nav_msgs::Odometry& odom1 = frontOdom;
+        if(!wheelOdomQue.empty())
+        {
+            nav_msgs::Odometry& odom2 = wheelOdomQue.front();
+            odomLinearInterpolation(odom1, odom2, timeLaserInfoCur, curOdom);
+            wheelOdomValid = true;
+        }
+        else
+        {
+            curOdom = odom1;
+            wheelOdomValid = false;
+        }
+
+        relaWheelOdomPos = lastWheelOdomAtt.inverse()*(Eigen::Vector3f(curOdom.pose.pose.position.x, curOdom.pose.pose.position.y, curOdom.pose.pose.position.z)-
+                            lastWheelOdomPos);
+        relaWheelOdomAtt = lastWheelOdomAtt.inverse()*Eigen::Quaternionf(curOdom.pose.pose.orientation.w, curOdom.pose.pose.orientation.x, curOdom.pose.pose.orientation.y, curOdom.pose.pose.orientation.z);
+
+        // 把对应的协方差矩阵也更新一下
+        // P_i+1 = T^T*P_i*I + Q
+        Eigen::Matrix<float, 6, 6> Q_t = Eigen::Matrix<float, 6, 6>::Zero();
+        for(int i=0; i<6; i++)
+            Q_t(i, i) = 0.0001;
+        V_t = P_t.block<6, 6>(0, 0) + Q_t;
+        // cout<<V_t<<endl<<endl;
+        
+        if(wheelOdomValid)
+        {
+            // 将transformTobeMapped转成矩阵形式
+            Eigen::Affine3f T_transformTobeMapped = trans2Affine3f(transformTobeMapped);
+            preWheelOdomPos = T_transformTobeMapped.translation();
+            preWheelOdomAtt = T_transformTobeMapped.rotation();
+
+            preWheelOdomPos.noalias() = preWheelOdomPos + preWheelOdomAtt*relaWheelOdomPos;
+            preWheelOdomAtt = preWheelOdomAtt * relaWheelOdomAtt;
+        }
+
+        lastWheelOdomPos = Eigen::Vector3f(curOdom.pose.pose.position.x, curOdom.pose.pose.position.y, curOdom.pose.pose.position.z);
+        lastWheelOdomAtt = Eigen::Quaternionf(curOdom.pose.pose.orientation.w, curOdom.pose.pose.orientation.x, curOdom.pose.pose.orientation.y, curOdom.pose.pose.orientation.z);
+    }
+
     void predictByFilter()
     {
         biasLock.lock();
@@ -552,7 +745,8 @@ public:
         {
             if(pointSelectedSurf[i]) VaildCount++;
         }
-        if (VaildCount < 10) {
+        if (VaildCount < 30) {
+            // isDegenerate = true;
             return true; // 直接跳出
         }
 
@@ -623,6 +817,7 @@ public:
         if (hasNaN == true) {
             ROS_WARN("System diverges Because of NaN...");
             hasDiverged = true;
+            // isDegenerate = true;
             return true;
         }
         // Check whether the filter converges
@@ -630,7 +825,98 @@ public:
         if (residual_.norm() > residualNorm * 10) {
             ROS_WARN("System diverges...");
             hasDiverged = true;
+            // isDegenerate = true;
             return true;
+        }
+
+        if(iterCount==0)
+        {
+            matE.setZero();
+            matV.setZero();
+            matV2.setZero();
+
+            Eigen::SelfAdjointEigenSolver< Eigen::Matrix<float, 6, 6> > esolver(HRH.block<6, 6>(0, 0));
+            matE = esolver.eigenvalues().real();
+            matV = esolver.eigenvectors().real();
+
+            matV2 = matV.transpose();
+
+            isDegenerate = false;
+            float eignThre[6] = { 30, 30, 30, 30, 30, 30 };
+            for (int i = 0; i < 6; i++)
+            {
+               if (matE(0, i) < eignThre[i])
+               {
+                  for (int j = 0; j < 6; j++)
+                  {
+                     matV2(i, j) = 0;
+                  }
+                  isDegenerate = true;
+               }
+               else
+               {
+                  break;
+               }
+            }
+            //需要进行转置
+            matP = matV.transpose().inverse() * matV2;
+        }
+
+        if(isDegenerate)
+        {
+            ROS_WARN(" Feature degradation !!! ");
+            if(useWheelOdometry && wheelOdomValid) // 允许使用轮速计代替且轮速计数据有效
+            {
+                // 轮速计与Imu进行ESKF估计 （只估计PQ即可）
+                // remap to transformTobeMapped
+                Eigen::Affine3f preWheelOdomTrans = Eigen::Affine3f::Identity();
+                preWheelOdomTrans.pretranslate(preWheelOdomPos);
+                preWheelOdomTrans.rotate(preWheelOdomAtt);
+                float transformTobeMapped_odom[6];
+                pcl::getTranslationAndEulerAngles(preWheelOdomTrans, 
+                    transformTobeMapped_odom[POS_+0], transformTobeMapped_odom[POS_+1], transformTobeMapped_odom[POS_+2], 
+                    transformTobeMapped_odom[ROT_+0], transformTobeMapped_odom[ROT_+1], transformTobeMapped_odom[ROT_+2]);
+                
+                H_k = Eigen::Matrix<float, Eigen::Dynamic, 18>::Zero(6, 18);
+                K_k = Eigen::Matrix<float, 18, Eigen::Dynamic>::Zero(18, 6);
+                // 轮式里程计的测量噪声应该由上一次的状态估计+测量噪声得到, 所以pi要在IMU预测更新之前记录一下
+                // V_t = I^T*p_i*I + Q
+
+                Eigen::Matrix<float, 6, 1> res_ = Eigen::Matrix<float, 6, 1>::Zero();
+
+                H_k(ROT_+0, ROT_+0) = 1.0;
+                H_k(ROT_+1, ROT_+1) = 1.0;
+                H_k(ROT_+2, ROT_+2) = 1.0;
+                H_k(POS_+0, POS_+0) = 1.0;
+                H_k(POS_+1, POS_+1) = 1.0;
+                H_k(POS_+2, POS_+2) = 1.0;
+
+                res_(POS_+0, 0) = transformTobeMapped_odom[POS_+0]-transformTobeMapped[POS_+0];
+                res_(POS_+1, 0) = transformTobeMapped_odom[POS_+1]-transformTobeMapped[POS_+1];
+                res_(POS_+2, 0) = transformTobeMapped_odom[POS_+2]-transformTobeMapped[POS_+2];
+                res_(ROT_+0, 0) = transformTobeMapped_odom[ROT_+0]-transformTobeMapped[ROT_+0];
+                res_(ROT_+1, 0) = transformTobeMapped_odom[ROT_+1]-transformTobeMapped[ROT_+1];
+                res_(ROT_+2, 0) = transformTobeMapped_odom[ROT_+2]-transformTobeMapped[ROT_+2];
+
+                K_k = P_t*H_k.transpose()*(H_k*P_t*H_k.transpose()+V_t).inverse();
+                updateVec_ = K_k*res_;
+
+                // K_k = P*H^T*(H*P*H^T+V)^(-1)
+                // updateVec_ = K_k*res_
+
+                transformTobeMapped[ROT_+0] += updateVec_(ROT_+0, 0);
+                transformTobeMapped[ROT_+1] += updateVec_(ROT_+1, 0);
+                transformTobeMapped[ROT_+2] += updateVec_(ROT_+2, 0);
+                transformTobeMapped[POS_+0] += updateVec_(POS_+0, 0);
+                transformTobeMapped[POS_+1] += updateVec_(POS_+1, 0);
+                transformTobeMapped[POS_+2] += updateVec_(POS_+2, 0);
+
+                return true;
+            }
+            else{
+                Eigen::Matrix<float, 6, 1> matX2 = updateVec_.block<6, 1>(0, 0);
+                updateVec_.block<6, 1>(0, 0) = matP * matX2;
+            }
         }
 
         errState += updateVec_;
@@ -662,11 +948,12 @@ public:
 
     void updateTransformationByFilter()
     {
+        isDegenerate = false;
         for(int iter=0; iter<10; iter++)
         {
             featureMatching(iter);
-            updateTransformationIESKF(iter);
-                // break;
+            if(updateTransformationIESKF(iter))
+                break;
         }
         Eigen::Matrix<float, 18, 18> I_ = Eigen::Matrix<float, 18, 18>::Identity();
         // P_t = (I_-K_k*H_k)*P_t*(I_-K_k*H_k).transpose()+K_k*R_k*K_k.transpose();
@@ -891,7 +1178,7 @@ int main(int argc, char** argv) {
 
     mapOptimization mapOptimization_;
 
-    ros::MultiThreadedSpinner spinner(2);
+    ros::MultiThreadedSpinner spinner(3);
     spinner.spin();
     return 0;
 }

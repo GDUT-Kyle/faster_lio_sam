@@ -127,9 +127,12 @@ protected:
     string baselinkFrame;
     string odometryFrame;
     string mapFrame;
+    string wheelOdomTopic;
 
     Transform extImuToBase;
     Transform extLivoxToBase;
+    float wheelImuExtrinsicYaw;
+    Eigen::Quaternionf wheelImuExtrinsicRot;
 
     int N_SCAN_0;
     int Horizon_SCAN_0;
@@ -160,6 +163,7 @@ protected:
     bool useImuHeadingInitialization;
     float optimizationStep;
     bool useUniformMotionForUpdateVel;
+    bool useWheelOdometry;
     
 public:
     parameter()
@@ -185,6 +189,8 @@ public:
         nh.param<vector<float>>("calibration/imuExtrinsicRot",  v_imuExtrinsicRot, vector<float>());
         extImuToBase.translate = Eigen::Map<Eigen::Vector3f>(v_imuExtrinsicTrans.data());
         extImuToBase.rotate = Eigen::Map<Eigen::Matrix3f>(v_imuExtrinsicRot.data());
+        nh.param<float>("calibration/wheelImuExtrinsicYaw", wheelImuExtrinsicYaw, 0.0);
+        wheelImuExtrinsicRot = Eigen::AngleAxisf(wheelImuExtrinsicYaw, Eigen::Vector3f::UnitZ());
 
         nh.param<int>("lidar0/N_SCAN_0", N_SCAN_0, 1);
         nh.param<int>("lidar0/Horizon_SCAN_0", Horizon_SCAN_0, 10000);
@@ -212,6 +218,8 @@ public:
         nh.param<bool>("mapping/useImuHeadingInitialization", useImuHeadingInitialization, true);
         nh.param<float>("mapping/optimizationStep", optimizationStep, 0.1);
         nh.param<bool>("mapping/useUniformMotionForUpdateVel", useUniformMotionForUpdateVel, true);
+        nh.param<bool>("mapping/useWheelOdometry", useWheelOdometry, true);
+        nh.param<string>("mapping/wheelOdomTopic", wheelOdomTopic, "/odom");
 
     }
     virtual ~parameter()

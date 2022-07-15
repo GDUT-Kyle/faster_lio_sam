@@ -144,6 +144,8 @@ public:
     {
         std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
 
+        // @TODO: 将点云转到IMU坐标系下
+
         if (!cachePointCloud(mergeLaserCloudMsg))
             return;
 
