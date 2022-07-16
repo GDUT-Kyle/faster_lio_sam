@@ -662,7 +662,7 @@ public:
 
     void updateTransformationByFilter()
     {
-        for(int iter=0; iter<10; iter++)
+        for(int iter=0; iter<20; iter++)
         {
             featureMatching(iter);
             updateTransformationIESKF(iter);
