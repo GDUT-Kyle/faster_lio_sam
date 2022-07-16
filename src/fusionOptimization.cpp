@@ -255,6 +255,7 @@ public:
             initWheelOdom = *wheelOdomMsg;
             initWheelOdomPos = Eigen::Vector3f(initWheelOdom.pose.pose.position.x, initWheelOdom.pose.pose.position.y, initWheelOdom.pose.pose.position.z);
             initWheelOdomAtt = Eigen::Quaternionf(initWheelOdom.pose.pose.orientation.w, initWheelOdom.pose.pose.orientation.x, initWheelOdom.pose.pose.orientation.y, initWheelOdom.pose.pose.orientation.z);
+            initWheelOdomAtt.normalize();
             recWheelOdomMsg = true;
         }
         wheelOdomQue.push_back(*wheelOdomMsg);
@@ -421,6 +422,7 @@ public:
         Eigen::Quaternionf relaOdomAtt;
         relaOdomPos = wheelImuExtrinsicRot * initWheelOdomAtt.inverse()*(curOdomPos-initWheelOdomPos);
         relaOdomAtt = initWheelOdomAtt.inverse() * curOdomAtt;
+        relaOdomAtt.normalize();
 
         curOdomMsg.header.stamp.fromSec(timeLaserInfoCur);
         curOdomMsg.header.frame_id = odometryFrame;
@@ -636,6 +638,32 @@ public:
 
         lastWheelOdomPos = Eigen::Vector3f(curOdom.pose.pose.position.x, curOdom.pose.pose.position.y, curOdom.pose.pose.position.z);
         lastWheelOdomAtt = Eigen::Quaternionf(curOdom.pose.pose.orientation.w, curOdom.pose.pose.orientation.x, curOdom.pose.pose.orientation.y, curOdom.pose.pose.orientation.z);
+
+        if(pubWheelOdom.getNumSubscribers()!=0)
+        {
+            nav_msgs::Odometry curOdomMsg;
+            Eigen::Vector3f curOdomPos = Eigen::Vector3f(curOdom.pose.pose.position.x, curOdom.pose.pose.position.y, curOdom.pose.pose.position.z);
+            Eigen::Quaternionf curOdomAtt = Eigen::Quaternionf(curOdom.pose.pose.orientation.w, curOdom.pose.pose.orientation.x, curOdom.pose.pose.orientation.y, curOdom.pose.pose.orientation.z);
+            Eigen::Vector3f relaOdomPos;
+            Eigen::Quaternionf relaOdomAtt;
+            relaOdomPos = wheelImuExtrinsicRot * initWheelOdomAtt.inverse()*(curOdomPos-initWheelOdomPos);
+            relaOdomAtt = initWheelOdomAtt.inverse() * curOdomAtt;
+            // relaOdomPos = preWheelOdomPos;
+            // relaOdomAtt = preWheelOdomAtt;
+            relaOdomAtt.normalize();
+
+            curOdomMsg.header.stamp.fromSec(timeLaserInfoCur);
+            curOdomMsg.header.frame_id = odometryFrame;
+            curOdomMsg.pose.pose.position.x = relaOdomPos.x();
+            curOdomMsg.pose.pose.position.y = relaOdomPos.y();
+            curOdomMsg.pose.pose.position.z = relaOdomPos.z();
+            curOdomMsg.pose.pose.orientation.x = relaOdomAtt.x();
+            curOdomMsg.pose.pose.orientation.y = relaOdomAtt.y();
+            curOdomMsg.pose.pose.orientation.z = relaOdomAtt.z();
+            curOdomMsg.pose.pose.orientation.w = relaOdomAtt.w();
+
+            pubWheelOdom.publish(curOdomMsg);
+        }
     }
 
     void predictByFilter()
@@ -750,12 +778,12 @@ public:
             return true; // 直接跳出
         }
 
-        residual_ = Eigen::Matrix<float, Eigen::Dynamic, 1>::Zero(laserCloudSelNum, 1);
-        H_k       = Eigen::Matrix<float, Eigen::Dynamic, 18>::Zero(laserCloudSelNum, 18);
+        residual_ = Eigen::Matrix<float, Eigen::Dynamic, 1>::Zero(laserCloudSelNum+6, 1);
+        H_k       = Eigen::Matrix<float, Eigen::Dynamic, 18>::Zero(laserCloudSelNum+6, 18);
         // R_K为测量噪声协方差矩阵的逆
         // R_k       = LIDAR_STD*Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>::Identity(laserCloudSelNum, laserCloudSelNum);
         // R_k_inv   = (1/LIDAR_STD)*Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>::Identity(laserCloudSelNum, laserCloudSelNum);
-        K_k       = Eigen::Matrix<float, 18, Eigen::Dynamic>::Zero(18, laserCloudSelNum);
+        K_k       = Eigen::Matrix<float, 18, Eigen::Dynamic>::Zero(18, laserCloudSelNum+6);
 
         PointType pointOri, coeff;
 
@@ -790,6 +818,32 @@ public:
             residual_(i, 0) = optimizationStep * coeff.intensity;
         }
 
+        // remap to transformTobeMapped
+        Eigen::Affine3f preWheelOdomTrans = Eigen::Affine3f::Identity();
+        preWheelOdomTrans.pretranslate(preWheelOdomPos);
+        preWheelOdomTrans.rotate(preWheelOdomAtt);
+        float transformTobeMapped_odom[6];
+        pcl::getTranslationAndEulerAngles(preWheelOdomTrans, 
+            transformTobeMapped_odom[POS_+0], transformTobeMapped_odom[POS_+1], transformTobeMapped_odom[POS_+2], 
+            transformTobeMapped_odom[ROT_+0], transformTobeMapped_odom[ROT_+1], transformTobeMapped_odom[ROT_+2]);
+                
+        // if(useWheelOdometry && wheelOdomValid)
+        // {
+        //     H_k(laserCloudSelNum+POS_+0, POS_+0) = 1.0;
+        //     H_k(laserCloudSelNum+POS_+1, POS_+1) = 1.0;
+        //     // H_k(laserCloudSelNum+POS_+2, POS_+2) = 1.0;
+        //     // H_k(laserCloudSelNum+ROT_+0, ROT_+0) = 1.0;
+        //     // H_k(laserCloudSelNum+ROT_+1, ROT_+1) = 1.0;
+        //     H_k(laserCloudSelNum+ROT_+2, ROT_+2) = 1.0;
+
+        //     residual_(laserCloudSelNum+POS_+0, 0) = optimizationStep * (transformTobeMapped_odom[POS_+0]-transformTobeMapped[POS_+0]);
+        //     residual_(laserCloudSelNum+POS_+1, 0) = optimizationStep * (transformTobeMapped_odom[POS_+1]-transformTobeMapped[POS_+1]);
+        //     // residual_(laserCloudSelNum+POS_+2, 0) = optimizationStep * (transformTobeMapped_odom[POS_+2]-transformTobeMapped[POS_+2]);
+        //     // residual_(laserCloudSelNum+ROT_+0, 0) = optimizationStep * (transformTobeMapped_odom[ROT_+0]-transformTobeMapped[ROT_+0]);
+        //     // residual_(laserCloudSelNum+ROT_+1, 0) = optimizationStep * (transformTobeMapped_odom[ROT_+1]-transformTobeMapped[ROT_+1]);
+        //     residual_(laserCloudSelNum+ROT_+2, 0) = optimizationStep * (transformTobeMapped_odom[ROT_+2]-transformTobeMapped[ROT_+2]);
+        // }
+
         // 原始
         // HRH_P = (H_k.transpose()*R_k_inv*H_k+P_t_inv).block(0, 0, 18, 18);
         // HRH_P_inv = HRH_P.colPivHouseholderQr().inverse();
@@ -802,8 +856,6 @@ public:
         K_k = HRH_inv * H_k.transpose();
         
         updateVec_ = K_k*(H_k*errState - residual_) - errState;
-
-        // cout<<K_k<<endl<<endl;
 
         // Divergence determination
         // 迭代发散判断
@@ -868,14 +920,6 @@ public:
             if(useWheelOdometry && wheelOdomValid) // 允许使用轮速计代替且轮速计数据有效
             {
                 // 轮速计与Imu进行ESKF估计 （只估计PQ即可）
-                // remap to transformTobeMapped
-                Eigen::Affine3f preWheelOdomTrans = Eigen::Affine3f::Identity();
-                preWheelOdomTrans.pretranslate(preWheelOdomPos);
-                preWheelOdomTrans.rotate(preWheelOdomAtt);
-                float transformTobeMapped_odom[6];
-                pcl::getTranslationAndEulerAngles(preWheelOdomTrans, 
-                    transformTobeMapped_odom[POS_+0], transformTobeMapped_odom[POS_+1], transformTobeMapped_odom[POS_+2], 
-                    transformTobeMapped_odom[ROT_+0], transformTobeMapped_odom[ROT_+1], transformTobeMapped_odom[ROT_+2]);
                 
                 H_k = Eigen::Matrix<float, Eigen::Dynamic, 18>::Zero(6, 18);
                 K_k = Eigen::Matrix<float, 18, Eigen::Dynamic>::Zero(18, 6);
@@ -949,7 +993,7 @@ public:
     void updateTransformationByFilter()
     {
         isDegenerate = false;
-        for(int iter=0; iter<10; iter++)
+        for(int iter=0; iter<20; iter++)
         {
             featureMatching(iter);
             if(updateTransformationIESKF(iter))

@@ -1,6 +1,6 @@
 ros:
   pointCloudTopic: "/livox/lidar"               # Point cloud data
-  imuTopic: "/IMU_data"                     # IMU data
+  imuTopic: "/wit/imu"                     # IMU data
   odomTopic: "odometry"
   lidarFrame: "livox"
   baselinkFrame: "livox"
@@ -48,10 +48,11 @@ ivox:
   point_filter_num: 3
 
 mapping:
+  # 根据建图效果调整，如果步长太大，容易出现蛇形轨迹（震荡）
+  optimizationStep: 0.4
   useImuHeadingInitialization: false
   # 实验测试过，经验上认为按照匀速运动假设进行速度更新更加稳定
   useUniformMotionForUpdateVel: true  # false:按eskf的公式更新速度，true:按匀速运动假设进行速度更新
-  optimizationStep: 1.0
   # 是否允许特征退化时，使用编码器里程计补偿，目前仅适用于轮式机器人，腿足式尚不适用
-  useWheelOdometry: true
+  useWheelOdometry: false
   wheelOdomTopic: "/odom"
