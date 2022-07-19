@@ -135,6 +135,7 @@ private:
     Eigen::Quaternionf relaWheelOdomAtt;
     Eigen::Vector3f preWheelOdomPos;
     Eigen::Quaternionf preWheelOdomAtt;
+    Eigen::Vector3f preWheelOdomVel;
     bool wheelOdomValid;
     Eigen::Matrix<float, 6, 6> V_t;
 
@@ -288,10 +289,9 @@ public:
                 case OTHER_SCAN:
                 {
                     predictByOdom();
-                    // removeOldOdom();
                     predictByFilter();
                     downsampleCurrentScan();
-                    updateTransformationByFilter();
+                    updateTransformationByFilter(timeLaserInfoCur-timeLastProcessing);
                     updateFilterState(timeLaserInfoCur-timeLastProcessing);
                     mapIncremental();
                     updatePath(transformTobeMapped);
@@ -434,6 +434,8 @@ public:
         curOdomMsg.pose.pose.orientation.z = relaOdomAtt.z();
         curOdomMsg.pose.pose.orientation.w = relaOdomAtt.w();
 
+        curOdomMsg.twist = curOdom.twist;
+
         pubWheelOdom.publish(curOdomMsg);
     }
 
@@ -441,9 +443,13 @@ public:
     {
         Eigen::Vector3f frontOdomPos(odom1.pose.pose.position.x, odom1.pose.pose.position.y, odom1.pose.pose.position.z);
         Eigen::Quaternionf frontOdomAtt(odom1.pose.pose.orientation.w, odom1.pose.pose.orientation.x, odom1.pose.pose.orientation.y, odom1.pose.pose.orientation.z);
+        Eigen::Vector3f frontOdomVel(odom1.twist.twist.linear.x, odom1.twist.twist.linear.y, odom1.twist.twist.linear.z);
+        Eigen::Vector3f frontOdomAngVel(odom1.twist.twist.angular.x, odom1.twist.twist.angular.y, odom1.twist.twist.angular.z);
 
         Eigen::Vector3f backOdomPos(odom2.pose.pose.position.x, odom2.pose.pose.position.y, odom2.pose.pose.position.z);
         Eigen::Quaternionf backOdomAtt(odom2.pose.pose.orientation.w, odom2.pose.pose.orientation.x, odom2.pose.pose.orientation.y, odom2.pose.pose.orientation.z);
+        Eigen::Vector3f backOdomVel(odom2.twist.twist.linear.x, odom2.twist.twist.linear.y, odom2.twist.twist.linear.z);
+        Eigen::Vector3f backOdomAngVel(odom2.twist.twist.angular.x, odom2.twist.twist.angular.y, odom2.twist.twist.angular.z);
 
         double frontTime = odom1.header.stamp.toSec();
         double backTime = odom2.header.stamp.toSec();
@@ -452,6 +458,9 @@ public:
 
         Eigen::Vector3f targetOdomPos = frontOdomPos + s*(backOdomPos-frontOdomPos);
         Eigen::Quaternionf targetOdomAtt = frontOdomAtt.slerp(s, backOdomAtt);
+        Eigen::Vector3f targetOdomVel = frontOdomVel + s*(backOdomVel - frontOdomVel);
+        targetOdomVel = (targetOdomAtt.inverse()*targetOdomVel).eval();
+        Eigen::Vector3f targetOdomAngVel = frontOdomAngVel + s*(backOdomAngVel - frontOdomAngVel);
 
         res.pose.pose.position.x = targetOdomPos.x();
         res.pose.pose.position.y = targetOdomPos.y();
@@ -461,6 +470,14 @@ public:
         res.pose.pose.orientation.y = targetOdomAtt.y();
         res.pose.pose.orientation.z = targetOdomAtt.z();
         res.pose.pose.orientation.w = targetOdomAtt.w();
+
+        res.twist.twist.linear.x = targetOdomVel.x();
+        res.twist.twist.linear.y = targetOdomVel.y();
+        res.twist.twist.linear.z = targetOdomVel.z();
+
+        res.twist.twist.angular.x = targetOdomAngVel.x();
+        res.twist.twist.angular.y = targetOdomAngVel.y();
+        res.twist.twist.angular.z = targetOdomAngVel.z();
     }
 
     void handleFirstScan()
@@ -616,14 +633,6 @@ public:
         relaWheelOdomPos = lastWheelOdomAtt.inverse()*(Eigen::Vector3f(curOdom.pose.pose.position.x, curOdom.pose.pose.position.y, curOdom.pose.pose.position.z)-
                             lastWheelOdomPos);
         relaWheelOdomAtt = lastWheelOdomAtt.inverse()*Eigen::Quaternionf(curOdom.pose.pose.orientation.w, curOdom.pose.pose.orientation.x, curOdom.pose.pose.orientation.y, curOdom.pose.pose.orientation.z);
-
-        // 把对应的协方差矩阵也更新一下
-        // P_i+1 = T^T*P_i*I + Q
-        Eigen::Matrix<float, 6, 6> Q_t = Eigen::Matrix<float, 6, 6>::Zero();
-        for(int i=0; i<6; i++)
-            Q_t(i, i) = 0.0001;
-        V_t = P_t.block<6, 6>(0, 0) + Q_t;
-        // cout<<V_t<<endl<<endl;
         
         if(wheelOdomValid)
         {
@@ -632,8 +641,10 @@ public:
             preWheelOdomPos = T_transformTobeMapped.translation();
             preWheelOdomAtt = T_transformTobeMapped.rotation();
 
-            preWheelOdomPos.noalias() = preWheelOdomPos + preWheelOdomAtt*relaWheelOdomPos;
+            preWheelOdomPos = (preWheelOdomPos + preWheelOdomAtt*relaWheelOdomPos).eval();
             preWheelOdomAtt = preWheelOdomAtt * relaWheelOdomAtt;
+
+            preWheelOdomVel = Eigen::Vector3f(curOdom.twist.twist.linear.x, curOdom.twist.twist.linear.y, curOdom.twist.twist.linear.z);
         }
 
         lastWheelOdomPos = Eigen::Vector3f(curOdom.pose.pose.position.x, curOdom.pose.pose.position.y, curOdom.pose.pose.position.z);
@@ -661,6 +672,8 @@ public:
             curOdomMsg.pose.pose.orientation.y = relaOdomAtt.y();
             curOdomMsg.pose.pose.orientation.z = relaOdomAtt.z();
             curOdomMsg.pose.pose.orientation.w = relaOdomAtt.w();
+
+            curOdomMsg.twist = curOdom.twist;
 
             pubWheelOdom.publish(curOdomMsg);
         }
@@ -754,7 +767,7 @@ public:
             transformTobeMapped[VEL_+i] = V_transformTobeMapped(i, 0);
     }
 
-    bool updateTransformationIESKF(int iterCount)
+    bool updateTransformationIESKF(int iterCount, double dt)
     {
         double residualNorm = 1e6;
         bool hasConverged = false;
@@ -815,34 +828,35 @@ public:
             H_k(i, POS_+0) = coeff.x;
             H_k(i, POS_+1) = coeff.y;
             H_k(i, POS_+2) = coeff.z;
-            residual_(i, 0) = optimizationStep * coeff.intensity;
+            residual_(i, 0) = 0.2*coeff.intensity;
         }
 
         // remap to transformTobeMapped
-        Eigen::Affine3f preWheelOdomTrans = Eigen::Affine3f::Identity();
-        preWheelOdomTrans.pretranslate(preWheelOdomPos);
-        preWheelOdomTrans.rotate(preWheelOdomAtt);
-        float transformTobeMapped_odom[6];
-        pcl::getTranslationAndEulerAngles(preWheelOdomTrans, 
-            transformTobeMapped_odom[POS_+0], transformTobeMapped_odom[POS_+1], transformTobeMapped_odom[POS_+2], 
-            transformTobeMapped_odom[ROT_+0], transformTobeMapped_odom[ROT_+1], transformTobeMapped_odom[ROT_+2]);
-                
-        // if(useWheelOdometry && wheelOdomValid)
-        // {
-        //     H_k(laserCloudSelNum+POS_+0, POS_+0) = 1.0;
-        //     H_k(laserCloudSelNum+POS_+1, POS_+1) = 1.0;
-        //     // H_k(laserCloudSelNum+POS_+2, POS_+2) = 1.0;
-        //     // H_k(laserCloudSelNum+ROT_+0, ROT_+0) = 1.0;
-        //     // H_k(laserCloudSelNum+ROT_+1, ROT_+1) = 1.0;
-        //     H_k(laserCloudSelNum+ROT_+2, ROT_+2) = 1.0;
+        // Eigen::Affine3f preWheelOdomTrans = Eigen::Affine3f::Identity();
+        // preWheelOdomTrans.pretranslate(preWheelOdomPos);
+        // preWheelOdomTrans.rotate(preWheelOdomAtt);
+        // float transformTobeMapped_odom[6];
+        // pcl::getTranslationAndEulerAngles(preWheelOdomTrans, 
+        //     transformTobeMapped_odom[POS_+0], transformTobeMapped_odom[POS_+1], transformTobeMapped_odom[POS_+2], 
+        //     transformTobeMapped_odom[ROT_+0], transformTobeMapped_odom[ROT_+1], transformTobeMapped_odom[ROT_+2]);
+        
+        if(useWheelOdometry && wheelOdomValid)
+        {
+            // 将transformTobeMapped转成矩阵形式
+            Eigen::Affine3f T_transformTobeMapped = trans2Affine3f(transformTobeMapped);
+            Eigen::Matrix<float, 3, 3> R_transformTobeMapped = T_transformTobeMapped.rotation();
+            Eigen::Matrix<float, 3, 3> dr_dp = (1/dt)*R_transformTobeMapped.transpose();
 
-        //     residual_(laserCloudSelNum+POS_+0, 0) = optimizationStep * (transformTobeMapped_odom[POS_+0]-transformTobeMapped[POS_+0]);
-        //     residual_(laserCloudSelNum+POS_+1, 0) = optimizationStep * (transformTobeMapped_odom[POS_+1]-transformTobeMapped[POS_+1]);
-        //     // residual_(laserCloudSelNum+POS_+2, 0) = optimizationStep * (transformTobeMapped_odom[POS_+2]-transformTobeMapped[POS_+2]);
-        //     // residual_(laserCloudSelNum+ROT_+0, 0) = optimizationStep * (transformTobeMapped_odom[ROT_+0]-transformTobeMapped[ROT_+0]);
-        //     // residual_(laserCloudSelNum+ROT_+1, 0) = optimizationStep * (transformTobeMapped_odom[ROT_+1]-transformTobeMapped[ROT_+1]);
-        //     residual_(laserCloudSelNum+ROT_+2, 0) = optimizationStep * (transformTobeMapped_odom[ROT_+2]-transformTobeMapped[ROT_+2]);
-        // }
+            Eigen::Vector3f velPre(transformTobeMapped[VEL_+0], transformTobeMapped[VEL_+1], transformTobeMapped[VEL_+2]);
+            velPre = (R_transformTobeMapped.transpose() *  velPre).eval();
+
+            Eigen::Vector3f res_ = preWheelOdomVel - velPre;
+
+            H_k.block<3, 3>(laserCloudSelNum, POS_) = dr_dp;
+            residual_.block<3, 1>(laserCloudSelNum, 0) = optimizationStep*res_;
+
+            // cout<<(preWheelOdomVel - tmp)
+        }
 
         // 原始
         // HRH_P = (H_k.transpose()*R_k_inv*H_k+P_t_inv).block(0, 0, 18, 18);
@@ -904,6 +918,7 @@ public:
                      matV2(i, j) = 0;
                   }
                   isDegenerate = true;
+                  ROS_WARN(" Feature degradation !!! ");
                }
                else
                {
@@ -916,51 +931,21 @@ public:
 
         if(isDegenerate)
         {
-            ROS_WARN(" Feature degradation !!! ");
-            if(useWheelOdometry && wheelOdomValid) // 允许使用轮速计代替且轮速计数据有效
-            {
-                // 轮速计与Imu进行ESKF估计 （只估计PQ即可）
-                
-                H_k = Eigen::Matrix<float, Eigen::Dynamic, 18>::Zero(6, 18);
-                K_k = Eigen::Matrix<float, 18, Eigen::Dynamic>::Zero(18, 6);
-                // 轮式里程计的测量噪声应该由上一次的状态估计+测量噪声得到, 所以pi要在IMU预测更新之前记录一下
-                // V_t = I^T*p_i*I + Q
+            // if(useWheelOdometry && wheelOdomValid) // 允许使用轮速计代替且轮速计数据有效
+            // {
+            //     // transformTobeMapped[ROT_+0] = transformTobeMapped_odom[ROT_+0];
+            //     // transformTobeMapped[ROT_+1] = transformTobeMapped_odom[ROT_+1];
+            //     // transformTobeMapped[ROT_+2] = transformTobeMapped_odom[ROT_+2];
+            //     transformTobeMapped[POS_+0] = transformTobeMapped_odom[POS_+0];
+            //     transformTobeMapped[POS_+1] = transformTobeMapped_odom[POS_+1];
+            //     transformTobeMapped[POS_+2] = transformTobeMapped_odom[POS_+2];
 
-                Eigen::Matrix<float, 6, 1> res_ = Eigen::Matrix<float, 6, 1>::Zero();
-
-                H_k(ROT_+0, ROT_+0) = 1.0;
-                H_k(ROT_+1, ROT_+1) = 1.0;
-                H_k(ROT_+2, ROT_+2) = 1.0;
-                H_k(POS_+0, POS_+0) = 1.0;
-                H_k(POS_+1, POS_+1) = 1.0;
-                H_k(POS_+2, POS_+2) = 1.0;
-
-                res_(POS_+0, 0) = transformTobeMapped_odom[POS_+0]-transformTobeMapped[POS_+0];
-                res_(POS_+1, 0) = transformTobeMapped_odom[POS_+1]-transformTobeMapped[POS_+1];
-                res_(POS_+2, 0) = transformTobeMapped_odom[POS_+2]-transformTobeMapped[POS_+2];
-                res_(ROT_+0, 0) = transformTobeMapped_odom[ROT_+0]-transformTobeMapped[ROT_+0];
-                res_(ROT_+1, 0) = transformTobeMapped_odom[ROT_+1]-transformTobeMapped[ROT_+1];
-                res_(ROT_+2, 0) = transformTobeMapped_odom[ROT_+2]-transformTobeMapped[ROT_+2];
-
-                K_k = P_t*H_k.transpose()*(H_k*P_t*H_k.transpose()+V_t).inverse();
-                updateVec_ = K_k*res_;
-
-                // K_k = P*H^T*(H*P*H^T+V)^(-1)
-                // updateVec_ = K_k*res_
-
-                transformTobeMapped[ROT_+0] += updateVec_(ROT_+0, 0);
-                transformTobeMapped[ROT_+1] += updateVec_(ROT_+1, 0);
-                transformTobeMapped[ROT_+2] += updateVec_(ROT_+2, 0);
-                transformTobeMapped[POS_+0] += updateVec_(POS_+0, 0);
-                transformTobeMapped[POS_+1] += updateVec_(POS_+1, 0);
-                transformTobeMapped[POS_+2] += updateVec_(POS_+2, 0);
-
-                return true;
-            }
-            else{
+            //     return true;
+            // }
+            // else{
                 Eigen::Matrix<float, 6, 1> matX2 = updateVec_.block<6, 1>(0, 0);
                 updateVec_.block<6, 1>(0, 0) = matP * matX2;
-            }
+            // }
         }
 
         errState += updateVec_;
@@ -977,26 +962,37 @@ public:
             transformTobeMapped[VEL_+1] += updateVec_(VEL_+1, 0);
             transformTobeMapped[VEL_+2] += updateVec_(VEL_+2, 0);
         }
-
-        bool coverage = true;
-        for(int i=0; i<3; i++)
+        else
         {
-            if(fabs(updateVec_(ROT_+i))>0.001 || fabs(updateVec_(POS_+i))>0.001)
+            for(int i=0; i<3; i++)
             {
-                coverage = false;
-                break;
+                transformTobeMapped[VEL_+i] = (transformTobeMapped[POS_+i]-transformTobeMappedLast[POS_+i])/dt;
             }
+        }
+
+        bool coverage = false;
+        float deltaR = sqrt(
+                            pow(pcl::rad2deg(updateVec_(ROT_+0, 0)), 2) +
+                            pow(pcl::rad2deg(updateVec_(ROT_+1, 0)), 2) +
+                            pow(pcl::rad2deg(updateVec_(ROT_+2, 0)), 2));
+        float deltaT = sqrt(
+                            pow(updateVec_(POS_+0, 0) * 100, 2) +
+                            pow(updateVec_(POS_+1, 0) * 100, 2) +
+                            pow(updateVec_(POS_+2, 0) * 100, 2));
+
+        if (deltaR < 0.05 && deltaT < 0.05) {
+            coverage = true;
         }
         return coverage;
     }
 
-    void updateTransformationByFilter()
+    void updateTransformationByFilter(double dt)
     {
         isDegenerate = false;
-        for(int iter=0; iter<20; iter++)
+        for(int iter=0; iter<15; iter++)
         {
             featureMatching(iter);
-            if(updateTransformationIESKF(iter))
+            if(updateTransformationIESKF(iter, dt))
                 break;
         }
         Eigen::Matrix<float, 18, 18> I_ = Eigen::Matrix<float, 18, 18>::Identity();
@@ -1012,10 +1008,6 @@ public:
             if(useUniformMotionForUpdateVel)
                 transformTobeMapped[VEL_+i] = (transformTobeMapped[POS_+i]-transformTobeMappedLast[POS_+i])/dt;
             filterState.vn_(i) = transformTobeMapped[VEL_+i];
-
-            // 看作匀加速运动
-            // transformTobeMapped[VEL_+i] = 2.0*(transformTobeMapped[POS_+i]-transformTobeMappedLast[POS_+i])/dt-transformTobeMappedLast[VEL_+i];
-            // filterState.vn_(i) = transformTobeMapped[VEL_+i];
         }
         // filterState.vn_ = Eigen::Vector3f(transformTobeMapped[VEL_+0], transformTobeMapped[VEL_+1], transformTobeMapped[VEL_+2]);
         // 将transformTobeMapped转成矩阵形式
@@ -1184,7 +1176,7 @@ public:
         laserOdometryROS.header.stamp = cloudInfo.header.stamp;
         laserOdometryROS.header.frame_id = odometryFrame;
         laserOdometryROS.child_frame_id = "/odom_mapping";
-         laserOdometryROS.pose.pose.position.x = transformTobeMapped[POS_+0];
+        laserOdometryROS.pose.pose.position.x = transformTobeMapped[POS_+0];
         laserOdometryROS.pose.pose.position.y = transformTobeMapped[POS_+1];
         laserOdometryROS.pose.pose.position.z = transformTobeMapped[POS_+2];
         laserOdometryROS.pose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(transformTobeMapped[ROT_+0], transformTobeMapped[ROT_+1], transformTobeMapped[ROT_+2]);
