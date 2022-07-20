@@ -831,15 +831,6 @@ public:
             residual_(i, 0) = 0.2*coeff.intensity;
         }
 
-        // remap to transformTobeMapped
-        // Eigen::Affine3f preWheelOdomTrans = Eigen::Affine3f::Identity();
-        // preWheelOdomTrans.pretranslate(preWheelOdomPos);
-        // preWheelOdomTrans.rotate(preWheelOdomAtt);
-        // float transformTobeMapped_odom[6];
-        // pcl::getTranslationAndEulerAngles(preWheelOdomTrans, 
-        //     transformTobeMapped_odom[POS_+0], transformTobeMapped_odom[POS_+1], transformTobeMapped_odom[POS_+2], 
-        //     transformTobeMapped_odom[ROT_+0], transformTobeMapped_odom[ROT_+1], transformTobeMapped_odom[ROT_+2]);
-        
         if(useWheelOdometry && wheelOdomValid)
         {
             // 将transformTobeMapped转成矩阵形式
@@ -855,7 +846,19 @@ public:
             H_k.block<3, 3>(laserCloudSelNum, POS_) = dr_dp;
             residual_.block<3, 1>(laserCloudSelNum, 0) = optimizationStep*res_;
 
-            // cout<<(preWheelOdomVel - tmp)
+            Eigen::Vector3f lastPos(transformTobeMappedLast[POS_+0],transformTobeMappedLast[POS_+1],transformTobeMappedLast[POS_+2]);
+            Eigen::Vector3f currPos = T_transformTobeMapped.translation();
+            Eigen::Vector3f v_ = (1/dt)*(currPos-lastPos);
+            float& vx = v_.x(); float& vy = v_.y(); float& vz = v_.z();
+            H_k(laserCloudSelNum+0, ROT_+0) = 0;
+            H_k(laserCloudSelNum+0, ROT_+1) = vx*(srx*srz + crx*crz*sry) - vy*(crz*srx - crx*sry*srz) + vz*crx*cry;
+            H_k(laserCloudSelNum+0, ROT_+2) = vx*(crx*srz - crz*srx*sry) - vy*(crx*crz + srx*sry*srz) - vz*cry*srx;
+            H_k(laserCloudSelNum+1, ROT_+0) = - vz*cry - vx*crz*sry - vy*sry*srz;
+            H_k(laserCloudSelNum+1, ROT_+1) = vx*cry*crz*srx - vz*srx*sry + vy*cry*srx*srz;
+            H_k(laserCloudSelNum+1, ROT_+2) = vx*crx*cry*crz - vz*crx*sry + vy*crx*cry*srz;
+            H_k(laserCloudSelNum+2, ROT_+0) = vy*cry*crz - vx*cry*srz;
+            H_k(laserCloudSelNum+2, ROT_+1) = - vx*(crx*crz + srx*sry*srz) - vy*(crx*srz - crz*srx*sry);
+            H_k(laserCloudSelNum+2, ROT_+2) = vx*(crz*srx - crx*sry*srz) + vy*(srx*srz + crx*crz*sry);
         }
 
         // 原始
@@ -931,21 +934,8 @@ public:
 
         if(isDegenerate)
         {
-            // if(useWheelOdometry && wheelOdomValid) // 允许使用轮速计代替且轮速计数据有效
-            // {
-            //     // transformTobeMapped[ROT_+0] = transformTobeMapped_odom[ROT_+0];
-            //     // transformTobeMapped[ROT_+1] = transformTobeMapped_odom[ROT_+1];
-            //     // transformTobeMapped[ROT_+2] = transformTobeMapped_odom[ROT_+2];
-            //     transformTobeMapped[POS_+0] = transformTobeMapped_odom[POS_+0];
-            //     transformTobeMapped[POS_+1] = transformTobeMapped_odom[POS_+1];
-            //     transformTobeMapped[POS_+2] = transformTobeMapped_odom[POS_+2];
-
-            //     return true;
-            // }
-            // else{
-                Eigen::Matrix<float, 6, 1> matX2 = updateVec_.block<6, 1>(0, 0);
-                updateVec_.block<6, 1>(0, 0) = matP * matX2;
-            // }
+            Eigen::Matrix<float, 6, 1> matX2 = updateVec_.block<6, 1>(0, 0);
+            updateVec_.block<6, 1>(0, 0) = matP * matX2;
         }
 
         errState += updateVec_;
