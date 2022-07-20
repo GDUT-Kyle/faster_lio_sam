@@ -55,4 +55,4 @@ mapping:
   useWheelOdometry: true
   wheelOdomTopic: "/odom"
   # 里程计因子残差的放大比例，代替协方差矩阵
-  optimizationStep: -1.0
+  optimizationStep: 1.0
