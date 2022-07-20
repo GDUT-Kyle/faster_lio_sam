@@ -116,6 +116,11 @@ private:
     Eigen::Matrix<float, 18, 18> HRH;
     Eigen::Matrix<float, 18, 18> HRH_inv;
 
+    Eigen::Matrix<float, 1, 6> matE;
+    Eigen::Matrix<float, 6, 6> matV;
+    Eigen::Matrix<float, 6, 6> matV2;
+    Eigen::Matrix<float, 6, 6> matP;
+
 public:
     mapOptimization()
     {
@@ -193,6 +198,11 @@ public:
         accBias.setZero();
         gyrBias.setZero();
         updateVec_.setZero();
+
+        matE.setZero();
+        matV.setZero();
+        matV2.setZero();
+        matP.setZero();
         
     }
 
@@ -633,6 +643,47 @@ public:
             return true;
         }
 
+        if(iterCount==0)
+        {
+            matE.setZero();
+            matV.setZero();
+            matV2.setZero();
+
+            Eigen::SelfAdjointEigenSolver< Eigen::Matrix<float, 6, 6> > esolver(HRH.block<6, 6>(0, 0));
+            matE = esolver.eigenvalues().real();
+            matV = esolver.eigenvectors().real();
+
+            matV2 = matV.transpose();
+
+            isDegenerate = false;
+            float eignThre[6] = { 30, 30, 30, 30, 30, 30 };
+            for (int i = 0; i < 6; i++)
+            {
+               if (matE(0, i) < eignThre[i])
+               {
+                  for (int j = 0; j < 6; j++)
+                  {
+                     matV2(i, j) = 0;
+                  }
+                  isDegenerate = true;
+                  ROS_WARN(" Feature degradation !!! ");
+               }
+               else
+               {
+                  break;
+               }
+            }
+            //需要进行转置
+            matP = matV.transpose().inverse() * matV2;
+        }
+
+        if(isDegenerate)
+        {
+            Eigen::Matrix<float, 6, 1> matX2 = updateVec_.block<6, 1>(0, 0);
+            updateVec_.block<6, 1>(0, 0) = matP * matX2;
+        }
+
+
         errState += updateVec_;
 
         transformTobeMapped[ROT_+0] += updateVec_(ROT_+0, 0);
@@ -648,14 +699,18 @@ public:
             transformTobeMapped[VEL_+2] += updateVec_(VEL_+2, 0);
         }
 
-        bool coverage = true;
-        for(int i=0; i<3; i++)
-        {
-            if(fabs(updateVec_(ROT_+i))>0.001 || fabs(updateVec_(POS_+i))>0.001)
-            {
-                coverage = false;
-                break;
-            }
+        bool coverage = false;
+        float deltaR = sqrt(
+                            pow(pcl::rad2deg(updateVec_(ROT_+0, 0)), 2) +
+                            pow(pcl::rad2deg(updateVec_(ROT_+1, 0)), 2) +
+                            pow(pcl::rad2deg(updateVec_(ROT_+2, 0)), 2));
+        float deltaT = sqrt(
+                            pow(updateVec_(POS_+0, 0) * 100, 2) +
+                            pow(updateVec_(POS_+1, 0) * 100, 2) +
+                            pow(updateVec_(POS_+2, 0) * 100, 2));
+
+        if (deltaR < 0.05 && deltaT < 0.05) {
+            coverage = true;
         }
         return coverage;
     }
