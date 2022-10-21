@@ -837,7 +837,7 @@ public:
             H_k(i, POS_+0) = coeff.x;
             H_k(i, POS_+1) = coeff.y;
             H_k(i, POS_+2) = coeff.z;
-            residual_(i, 0) = 1.0*coeff.intensity;
+            residual_(i, 0) = 0.5*coeff.intensity;
         }
 
         if(useWheelOdometry && wheelOdomValid)
