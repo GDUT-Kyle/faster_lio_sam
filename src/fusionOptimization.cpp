@@ -140,6 +140,8 @@ private:
     bool wheelOdomValid;
     Eigen::Matrix<float, 6, 6> V_t;
 
+    Eigen::Quaternionf curIMUPose;
+
 public:
     mapOptimization()
     {
@@ -289,6 +291,7 @@ public:
                 }
                 case OTHER_SCAN:
                 {
+                    //cout<<cloudInfo.imuRollInit<<", "<<cloudInfo.imuPitchInit<<endl;
                     predictByOdom();
                     predictByFilter();
                     downsampleCurrentScan();
@@ -700,6 +703,10 @@ public:
         Eigen::Vector3f V_transformTobeMapped = Eigen::Vector3f(transformTobeMapped[VEL_+0],
             transformTobeMapped[VEL_+1], transformTobeMapped[VEL_+2]);
         
+        //cout<<Eigen::Quaternionf(imuBucket[0].orientation.w, imuBucket[0].orientation.x, imuBucket[0].orientation.y, imuBucket[0].orientation.z).toRotationMatrix().eulerAngles(2, 1, 0).transpose()<<endl;
+
+        curIMUPose = Eigen::Quaternionf(imuBucket[0].orientation.w, imuBucket[0].orientation.x, imuBucket[0].orientation.y, imuBucket[0].orientation.z);
+        
         Eigen::Vector3f un_acc_last, un_gyr_last, un_acc_next, un_gyr_next;
         imuData thisImu(imuBucket[0]);
         imuData lastImu = thisImu;
@@ -830,7 +837,7 @@ public:
             H_k(i, POS_+0) = coeff.x;
             H_k(i, POS_+1) = coeff.y;
             H_k(i, POS_+2) = coeff.z;
-            residual_(i, 0) = 0.2*coeff.intensity;
+            residual_(i, 0) = 1.0*coeff.intensity;
         }
 
         if(useWheelOdometry && wheelOdomValid)
@@ -854,26 +861,10 @@ public:
             Eigen::Vector3f v_ = (1/dt)*(currPos-lastPos);
             Eigen::Matrix<float, 3, 3> dr_dq = -R_transformTobeMapped.transpose()*anti_symmetric<float>(v_);
             H_k.block<3, 3>(laserCloudSelNum, ROT_+0) = dr_dq;
-
-            // Eigen::Vector3f lastPos(transformTobeMappedLast[POS_+0],transformTobeMappedLast[POS_+1],transformTobeMappedLast[POS_+2]);
-            // Eigen::Vector3f currPos = T_transformTobeMapped.translation();
-            // Eigen::Vector3f v_ = (1/dt)*(currPos-lastPos);
-            // float& vx = v_.x(); float& vy = v_.y(); float& vz = v_.z();
-            // H_k(laserCloudSelNum+0, ROT_+0) = 0;
-            // H_k(laserCloudSelNum+0, ROT_+1) = vx*(srx*srz + crx*crz*sry) - vy*(crz*srx - crx*sry*srz) + vz*crx*cry;
-            // H_k(laserCloudSelNum+0, ROT_+2) = vx*(crx*srz - crz*srx*sry) - vy*(crx*crz + srx*sry*srz) - vz*cry*srx;
-            // H_k(laserCloudSelNum+1, ROT_+0) = - vz*cry - vx*crz*sry - vy*sry*srz;
-            // H_k(laserCloudSelNum+1, ROT_+1) = vx*cry*crz*srx - vz*srx*sry + vy*cry*srx*srz;
-            // H_k(laserCloudSelNum+1, ROT_+2) = vx*crx*cry*crz - vz*crx*sry + vy*crx*cry*srz;
-            // H_k(laserCloudSelNum+2, ROT_+0) = vy*cry*crz - vx*cry*srz;
-            // H_k(laserCloudSelNum+2, ROT_+1) = - vx*(crx*crz + srx*sry*srz) - vy*(crx*srz - crz*srx*sry);
-            // H_k(laserCloudSelNum+2, ROT_+2) = vx*(crz*srx - crx*sry*srz) + vy*(srx*srz + crx*crz*sry);
-            // H_k.block<3, 3>(laserCloudSelNum, ROT_+0) = H_k.block<3, 3>(laserCloudSelNum, ROT_+0).eval();
-
-            // float angVelRes = preWheelOdomAngVel.z() - (transformTobeMapped[ROT_+2] - transformTobeMappedLast[ROT_+2])/dt;
-            // H_k(laserCloudSelNum+3, ROT_+2) = -(1/dt);
-            // residual_(laserCloudSelNum+3, 0) =  optimizationStep*angVelRes;
         }
+
+        // 加入IMU的姿态约束
+        
 
         // 原始
         // HRH_P = (H_k.transpose()*R_k_inv*H_k+P_t_inv).block(0, 0, 18, 18);
@@ -946,27 +937,27 @@ public:
             matP = matV.transpose().inverse() * matV2;
         }
 
-        if(isDegenerate)
-        {
-            if(useWheelOdometry && wheelOdomValid)
-            {
-                Eigen::Affine3f T_;
-                T_.setIdentity();
-                T_.pretranslate(preWheelOdomPos);
-                T_.rotate(preWheelOdomAtt);
-                float rx = transformTobeMapped[ROT_+0]; float ry = transformTobeMapped[ROT_+1]; float rz = transformTobeMapped[ROT_+2]; 
-                pcl::getTranslationAndEulerAngles(T_, 
-                    transformTobeMapped[POS_+0], transformTobeMapped[POS_+1], transformTobeMapped[POS_+2], 
-                    transformTobeMapped[ROT_+0], transformTobeMapped[ROT_+1], transformTobeMapped[ROT_+2]);
-                transformTobeMapped[ROT_+0] = rx;
-                transformTobeMapped[ROT_+1] = ry;
-                transformTobeMapped[ROT_+2] = rz;
-                return true;
-            }
+        // if(isDegenerate)
+        // {
+        //     if(useWheelOdometry && wheelOdomValid)
+        //     {
+        //         Eigen::Affine3f T_;
+        //         T_.setIdentity();
+        //         T_.pretranslate(preWheelOdomPos);
+        //         T_.rotate(preWheelOdomAtt);
+        //         float rx = transformTobeMapped[ROT_+0]; float ry = transformTobeMapped[ROT_+1]; float rz = transformTobeMapped[ROT_+2]; 
+        //         pcl::getTranslationAndEulerAngles(T_, 
+        //             transformTobeMapped[POS_+0], transformTobeMapped[POS_+1], transformTobeMapped[POS_+2], 
+        //             transformTobeMapped[ROT_+0], transformTobeMapped[ROT_+1], transformTobeMapped[ROT_+2]);
+        //         transformTobeMapped[ROT_+0] = rx;
+        //         transformTobeMapped[ROT_+1] = ry;
+        //         transformTobeMapped[ROT_+2] = rz;
+        //         return true;
+        //     }
             
-            Eigen::Matrix<float, 6, 1> matX2 = updateVec_.block<6, 1>(0, 0);
-            updateVec_.block<6, 1>(0, 0) = matP * matX2;
-        }
+        //     Eigen::Matrix<float, 6, 1> matX2 = updateVec_.block<6, 1>(0, 0);
+        //     updateVec_.block<6, 1>(0, 0) = matP * matX2;
+        // }
 
         errState += updateVec_;
 
@@ -1009,9 +1000,9 @@ public:
     void updateTransformationByFilter(double dt)
     {
         isDegenerate = false;
-        for(int iter=0; iter<15; iter++)
+        for(int iter=0; iter<30; iter++)
         {
-            featureMatching(iter);
+            if(iter%3==0) featureMatching(iter);
             if(updateTransformationIESKF(iter, dt))
                 break;
         }
