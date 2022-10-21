@@ -717,11 +717,11 @@ public:
 
     void updateTransformationByFilter()
     {
-        for(int iter=0; iter<20; iter++)
+        for(int iter=0; iter<30; iter++)
         {
-            featureMatching(iter);
-            updateTransformationIESKF(iter);
-                // break;
+            if(iter%3==0) featureMatching(iter);
+            if(updateTransformationIESKF(iter))
+                break;
         }
         Eigen::Matrix<float, 18, 18> I_ = Eigen::Matrix<float, 18, 18>::Identity();
         // P_t = (I_-K_k*H_k)*P_t*(I_-K_k*H_k).transpose()+K_k*R_k*K_k.transpose();
