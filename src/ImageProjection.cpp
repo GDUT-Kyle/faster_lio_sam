@@ -136,7 +136,7 @@ public:
         for(int i=0; i<3; i++)
         {
             accBias(i) = imuBiasMsg->data[1+i];
-            gyrBias(i) = imuBiasMsg->data[3+i];
+            gyrBias(i) = imuBiasMsg->data[4+i];
         }
     }
 
